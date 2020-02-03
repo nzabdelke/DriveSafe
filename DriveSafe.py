@@ -1,12 +1,20 @@
 # Importing all the required packages
 import cv2
 import dlib
-import imutils
 import time
-from imutils import face_utils
-from imutils.video import VideoStream
+from collections import OrderedDict
 import numpy as np
 from scipy import spatial
+
+# Remove
+from imutils.video import VideoStream
+
+
+def shapeObjectToArr(shape, dtype="int"):
+    coordinateTuple = np.zeros((68, 2), dtype=dtype)
+    for i in range(0, 68):
+        coordinateTuple[i] = (shape.part(i).x, shape.part(i).y)
+    return coordinateTuple
 
 
 def calculateEAR(eye):
@@ -23,10 +31,31 @@ def calculateEAR(eye):
     return EAR
 
 
+def resize(image, width=None, height=None):
+
+    dim = None
+    (h, w) = image.shape[:2]
+
+    if width is None and height is None:
+        return image
+
+    if width is None:
+
+        r = height / float(h)
+        dim = (int(w * r), height)
+
+    else:
+        r = width / float(w)
+        dim = (width, int(h * r))
+
+    newImage = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
+    return newImage
+
+
 FRAMES_BELOW_EAR_MAX = (
     25  # Number of frames where EAR is below the min and alert should sound
 )
-EAR_MIN = 0.23  # EAR min which indicates that EAR is below the minimum for an open eye
+EAR_MIN = 0.25  # EAR min which indicates that EAR is below the minimum for an open eye
 numOfFrames = 0  # Number of consecutive frames where EAR below min. If numOfFrames is more than FRAMES_BELOW_EAR_MAX, sound alert.
 numOfFrames2 = 0  # Number of consecutive frames where there are no eyes detected
 # Make instance of dlib's face detector (Histogram of Oriented Gradients) and then create
@@ -36,9 +65,23 @@ predictor = dlib.shape_predictor(
     "shape_predictor_68_face_landmarks.dat"
 )  # .dat file from http://dlib.net/face_landmark_detection.py.html
 
+
+FACIAL_LANDMARKS = OrderedDict(
+    [
+        ("mouth", (48, 68)),
+        ("inner_mouth", (60, 68)),
+        ("right_eyebrow", (17, 22)),
+        ("left_eyebrow", (22, 27)),
+        ("right_eye", (36, 42)),
+        ("left_eye", (42, 48)),
+        ("nose", (27, 36)),
+        ("jaw", (0, 17)),
+    ]
+)
+
 # Extracting left and right eye by slicing the list produced by the facial landmarks from dlib
-(rightStart, rightEnd) = face_utils.FACIAL_LANDMARKS_IDXS["right_eye"]
-(leftStart, leftEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
+(rightStart, rightEnd) = FACIAL_LANDMARKS["right_eye"]
+(leftStart, leftEnd) = FACIAL_LANDMARKS["left_eye"]
 
 # Capture stream from the webcam
 videoStream = VideoStream(
@@ -51,7 +94,7 @@ while True:
     # Read each frame
     frame = videoStream.read()
     # Resizing image to make it easier to preprocess
-    frame = imutils.resize(frame, width=600)
+    frame = resize(frame, width=600)
     # Grayscaling the picture to improve performance
     grayscale = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     # detect faces in the grayscale frame
@@ -75,11 +118,12 @@ while True:
     # Iterare over detected faces from the view stream. This allows for multiple face detection
     for face in faces:
 
-        # Find the facial landmarks for a face and convert (x,y) tuples to a NumPy array
+        # Find the facial landmarks for a face and convert (x,y) tuples to an array
         facialLandmark = predictor(grayscale, face)
-        facialLandmark = face_utils.shape_to_np(facialLandmark)
+        facialLandmark = shapeObjectToArr(facialLandmark)
+        print(facialLandmark)
 
-        # Slice NumPy array to get the coordinates of both eyes using indices
+        # Slice  array to get the coordinates of both eyes using indices
         rightEye = facialLandmark[rightStart:rightEnd]
         rightEAR = calculateEAR(rightEye)
         leftEye = facialLandmark[leftStart:leftEnd]
